@@ -57,6 +57,10 @@ spec:
 
 ### 3. Initialisation du Replica Set
 
+```bash
+kubectl exec -it mongodb-1 -ti -- mongo
+```
+
 ```javascript
 rs.initiate({
   _id: "rs0",
@@ -90,12 +94,12 @@ kubectl logs mongodb-0
 # Mise à jour par phases
 
 # Phase 1 : Test initial
-kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":4}}}}'
+kubectl patch statefulset mongodb -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":2}}}}'
 
 # Phase 2 : Extension du déploiement
-kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":2}}}}'
+kubectl patch statefulset mongodb -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":1}}}}'
 
 # Phase 3 : Déploiement complet
-kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":0}}}}'
+kubectl patch statefulset mongodb -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":0}}}}'
 
 ```
