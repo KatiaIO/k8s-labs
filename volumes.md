@@ -31,130 +31,17 @@ data:
 ## Étape 2 : Créer le PVC et le PVC
 
 ```yaml
-# K8s service account for CSI Driver
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: local-volume-provisioner
-  namespace: kube-system
----
-# List of Permissions 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: local-storage-provisioner-node-clusterrole
-rules:
-  - apiGroups: [ "" ]
-    resources: [ "persistentvolumes" ]
-    verbs: [ "get", "list", "watch", "create", "delete" ]
-  - apiGroups: [ "storage.k8s.io" ]
-    resources: [ "storageclasses" ]
-    verbs: [ "get", "list", "watch" ]
-  - apiGroups: [ "" ]
-    resources: [ "events" ]
-    verbs: [ "watch" ]
-  - apiGroups: [ "", "events.k8s.io" ]
-    resources: [ "events" ]
-    verbs: [ "create", "update", "patch" ]
-  - apiGroups: [ "" ]
-    resources: [ "nodes" ]
-    verbs: [ "get" ]
----
-# Attach the K8s ClusterRole to our K8s ServiceAccount
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: local-storage-provisioner-node-binding
-  namespace: kube-system
-subjects:
-  - kind: ServiceAccount
-    name: local-volume-provisioner
-    namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: local-storage-provisioner-node-clusterrole
-  apiGroup: rbac.authorization.k8s.io
-```
-
-```yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: local-storage
-provisioner: kubernetes.io/no-provisioner
+  name: ebs-sc
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
 volumeBindingMode: WaitForFirstConsumer
-```
-
-```yaml
-# The Local Persistent Volume CSI DaemonSet
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: local-volume-provisioner
-  namespace: kube-system
-  labels:
-    app.kubernetes.io/name: local-volume-provisioner
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: local-volume-provisioner
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: local-volume-provisioner
-    spec:
-      serviceAccountName: local-volume-provisioner
-      containers:
-        # The latest version can be found in the changelog.
-        # In production, one might want to use the container digest hash 
-        # over version for improved security.
-        # https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner/blob/master/CHANGELOG.md
-        - image: "registry.k8s.io/sig-storage/local-volume-provisioner:v2.5.0"
-          # In production you might want to set this to use a locally cached 
-          # image by setting this to: IfNotPresent
-          imagePullPolicy: "Always"
-          name: provisioner
-          securityContext:
-            privileged: true
-          env:
-            - name: MY_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: MY_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-          ports:
-            # List of metrics at
-            # https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner/blob/cee9e228dc28a4355f664b4fe2236b1857fe4eca/pkg/metrics/metrics.go
-            - name: metrics
-              containerPort: 8080
-          volumeMounts:
-            - name: provisioner-config
-              mountPath: /etc/provisioner/config
-              readOnly: true
-            - mountPath: /mnt/fast-disks
-              name: fast-disks
-              mountPropagation: "HostToContainer"
-      volumes:
-        - name: provisioner-config
-          configMap:
-            name: local-volume-provisioner-config
-        - name: fast-disks
-          hostPath:
-            path: /mnt/fast-disks
-      # Only run CSI Driver on the `fast-disk` tagged nodegroup 
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: fast-disk-node
-                    operator: In
-                    values:
-                      - "pv-raid"
-                      - "pv-nvme"
+parameters:
+  type: gp3
+  encrypted: "true"
 ```
 
 ```yaml
@@ -165,7 +52,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: local-storage
+  storageClassName: ebs-sc
   resources:
     requests:
       storage: 1Gi
@@ -194,7 +81,7 @@ spec:
 
     - name: log-processor
       image: busybox
-      command: [ "/bin/sh", "-c", "tail -f /logs/access.log | grep --line-buffered POST >> /logs/uploads.log" ]
+      command: [ "/bin/sh", "-c", "tail -f /logs/access.log | grep POST >> /logs/uploads.log" ]
       volumeMounts:
         - name: logs
           mountPath: /logs
