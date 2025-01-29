@@ -1,4 +1,4 @@
-# SecurityContext dans Kubernetes
+# Lab : SecurityContext dans Kubernetes
 
 ## Objectifs
 
@@ -6,9 +6,9 @@
 - Appliquer les bonnes pratiques de sécurité
 - Déboguer les problèmes de permission courants
 
-## Exercice 1 : SecurityContext Basique
+## Exercice 1 : Pod avec user et group spécifiques
 
-### 1.1 Pod avec User et Group Spécifiques
+Créez un fichier `security-user-pod.yaml` :
 
 ```yaml
 apiVersion: v1
@@ -24,35 +24,33 @@ spec:
     - name: sec-ctx-demo
       image: busybox
       command: [ "sh", "-c", "sleep 3600" ]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      emptyDir: { }
 ```
 
-Vérification :
+Vérifications à effectuer :
 
 ```bash
+# Déployer le pod
 kubectl apply -f security-user-pod.yaml
+
+# Vérifier l'utilisateur et les groupes (Résultat attendu : uid=1000 gid=3000 groups=2000)
 kubectl exec security-user-pod -- id
-```
 
-### 1.2 Non-Root Container
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: non-root-pod
-spec:
-  securityContext:
-    runAsNonRoot: true
-  containers:
-    - name: non-root-container
-      image: nginx
-      securityContext:
-        runAsUser: 1000
+# Vérifier les permissions des fichiers créés (Résultat attendu : groupe=2000)
+kubectl exec security-user-pod -- touch /data/test
+kubectl exec security-user-pod -- ls -l /data/test
 ```
 
 ## Exercice 2 : Capabilities Linux
 
 ### 2.1 Drop All Capabilities
+
+Créez un fichier `no-caps-pod.yaml` :
 
 ```yaml
 apiVersion: v1
@@ -62,13 +60,28 @@ metadata:
 spec:
   containers:
     - name: no-caps-container
-      image: nginx
+      image: busybox
+      command: [ "sh", "-c", "sleep 3600" ]
       securityContext:
         capabilities:
           drop: [ "ALL" ]
 ```
 
-### 2.2 Ajout de Capabilities Spécifiques
+Vérifications à effectuer :
+
+```bash
+# Déployer le pod
+kubectl apply -f no-caps-pod.yaml
+
+# Vérifier les capabilities (Résultat attendu : pas de capabilities)
+kubectl exec no-caps-pod -- cat /proc/1/status | grep Cap
+kubectl exec no-caps-pod -- ping 8.8.8.8  # Doit échouer
+kubectl exec no-caps-pod -- nc -l -p 80   # Doit échouer
+```
+
+### 2.2 Ajout de capabilities spécifiques
+
+Créez un fichier `specific-caps-pod.yaml` :
 
 ```yaml
 apiVersion: v1
@@ -85,7 +98,19 @@ spec:
           add: [ "NET_BIND_SERVICE" ]
 ```
 
-## Exercice 3 : Système de Fichiers en Lecture Seule
+Vérifications à effectuer :
+
+```bash
+# Déployer le pod
+kubectl apply -f specific-caps-pod.yaml
+
+# Vérifier que NET_BIND_SERVICE fonctionne
+kubectl exec specific-caps-pod -- nc -l -p 80  # Doit fonctionner
+```
+
+## Exercice 3 : Système de fichiers en lecture seule
+
+Créez un fichier `readonly-pod.yaml` :
 
 ```yaml
 apiVersion: v1
@@ -114,139 +139,14 @@ spec:
       emptyDir: { }
 ```
 
-## Exercice 4 : Cas Pratique - Application Sécurisée
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: secure-app
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: secure-app
-  template:
-    metadata:
-      labels:
-        app: secure-app
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 3000
-        fsGroup: 2000
-      containers:
-        - name: app
-          image: nginx
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ "ALL" ]
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: nginx-cache
-              mountPath: /var/cache/nginx
-      volumes:
-        - name: tmp
-          emptyDir: { }
-        - name: nginx-cache
-          emptyDir: { }
-```
-
-## Exercice 5 : Troubleshooting
-
-### 5.1 Permission Denied
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: permission-pod
-spec:
-  containers:
-    - name: permission-container
-      image: busybox
-      command: [ "sh", "-c", "touch /test.txt" ]
-      securityContext:
-        readOnlyRootFilesystem: true
-```
-
-Solutions à explorer :
-
-1. Ajouter un volume writeable
-2. Modifier les permissions
-3. Changer le point de montage
-
-### 5.2 Port Binding
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: port-pod
-spec:
-  containers:
-    - name: port-container
-      image: nginx
-      ports:
-        - containerPort: 80
-      securityContext:
-        capabilities:
-          drop: [ "ALL" ]
-```
-
-## Points à Noter
-
-1. Niveau Pod vs Conteneur :
-
-- Les paramètres au niveau pod s'appliquent à tous les conteneurs
-- Les paramètres au niveau conteneur peuvent surcharger ceux du pod
-- Certains paramètres ne sont disponibles qu'au niveau conteneur (capabilities)
-
-2. Bonnes Pratiques :
-
-- Toujours utiliser runAsNonRoot
-- Minimiser les capabilities
-- Utiliser readOnlyRootFilesystem quand possible
-- Définir des UIDs explicites
-
-3. Debuggage :
+Vérifications à effectuer :
 
 ```bash
-# Vérifier le contexte de sécurité
-kubectl describe pod [pod-name]
+# Déployer le pod
+kubectl apply -f readonly-pod.yaml
 
-# Vérifier les permissions
-kubectl exec [pod-name] -- ls -la /path
-
-# Vérifier l'utilisateur
-kubectl exec [pod-name] -- id
-
-# Vérifier les capabilities
-kubectl exec [pod-name] -- cat /proc/1/status | grep Cap
+# Tester l'écriture dans différents répertoires
+kubectl exec readonly-pod -- touch /test.txt  # Doit échouer
+kubectl exec readonly-pod -- touch /tmp/test.txt  # Doit réussir
+kubectl exec readonly-pod -- touch /var/cache/nginx/test.txt  # Doit réussir
 ```
-
-## Nettoyage
-
-```bash
-kubectl delete pod security-user-pod non-root-pod no-caps-pod specific-caps-pod readonly-pod permission-pod port-pod
-kubectl delete deployment secure-app
-```
-
-## Exercice Bonus
-
-1. Créer un pod qui :
-
-- S'exécute en tant qu'utilisateur non-root
-- A un système de fichiers en lecture seule
-- Peut écrire dans des chemins spécifiques
-- N'a que les capabilities minimales nécessaires
-
-2. Implémenter une politique de sécurité pour :
-
-- Forcer l'utilisation de conteneurs non-root
-- Interdire les privilèges élevés
-- Limiter les capabilities disponibles

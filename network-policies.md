@@ -1,258 +1,140 @@
-# Exercice Pratique : NetworkPolicies
+# Lab : NetworkPolicies
 
 ## Objectif
-Mettre en place une architecture trois tiers sécurisée avec des NetworkPolicies.
 
-## Étape 1 : Déploiement de l'Application
+Comprendre les NetworkPolicies en contrôlant le trafic entre deux pods.
 
-### 1. Création des Déploiements
+## Exercice 1 : Configuration initiale
+
+1. Créer le fichier `app.yaml` :
+
 ```yaml
-# frontend.yaml
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
-  name: frontend
+  name: web-a
+  labels:
+    app: web-a
 spec:
-  selector:
-    matchLabels:
-      app: frontend
-  template:
-    metadata:
-      labels:
-        app: frontend
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:alpine
-
+  containers:
+    - name: nginx
+      image: nginx
 ---
-# backend.yaml
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Service
 metadata:
-  name: backend
+  name: web-a-svc
 spec:
   selector:
-    matchLabels:
-      app: backend
-  template:
-    metadata:
-      labels:
-        app: backend
-    spec:
-      containers:
-      - name: api
-        image: python:alpine
-
----
-# database.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: database
-spec:
-  selector:
-    matchLabels:
-      app: database
-  template:
-    metadata:
-      labels:
-        app: database
-    spec:
-      containers:
-      - name: postgres
-        image: postgres:alpine
-```
-
-## Étape 2 : Configuration des NetworkPolicies
-
-### 1. Politique "Deny All"
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-all
-spec:
-  podSelector: {}
-  policyTypes:
-  - Ingress
-  - Egress
-```
-
-### 2. Politique Frontend
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: frontend-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: frontend
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: backend
-    ports:
-    - protocol: TCP
-      port: 8080
-```
-
-### 3. Politique Backend
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: backend-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: backend
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: frontend
-    ports:
-    - protocol: TCP
-      port: 8080
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: database
-    ports:
-    - protocol: TCP
-      port: 5432
-```
-
-### 4. Politique Database
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: database-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: database
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: backend
-    ports:
-    - protocol: TCP
-      port: 5432
-```
-
-## Étape 3 : Tests de Connectivité
-
-### 1. Test Direct
-```bash
-# Test Frontend → Backend
-kubectl exec -it $(kubectl get pod -l app=frontend -o name | head -n1) -- \
-  wget -qO- http://backend:8080
-
-# Test Backend → Database
-kubectl exec -it $(kubectl get pod -l app=backend -o name | head -n1) -- \
-  nc -zv database 5432
-
-# Test Frontend → Database (devrait échouer)
-kubectl exec -it $(kubectl get pod -l app=frontend -o name | head -n1) -- \
-  nc -zv database 5432
-```
-
-### 2. Test avec un Pod Temporaire
-```bash
-# Créer un pod de test
-kubectl run test-pod --rm -i -t --image=alpine -- sh
-
-# Tester les connexions
-wget -qO- http://frontend
-wget -qO- http://backend:8080
-nc -zv database 5432
-```
-
-## Étape 4 : Scénarios de Débogage
-
-### 1. Vérification des Politiques
-```bash
-# Lister toutes les politiques
-kubectl get networkpolicies
-
-# Examiner les détails
-kubectl describe networkpolicy frontend-policy
-kubectl describe networkpolicy backend-policy
-kubectl describe networkpolicy database-policy
-```
-
-### 2. Analyse des Logs
-```bash
-# Vérifier les logs des pods
-kubectl logs -l app=backend
-kubectl logs -l app=database
-
-# Observer les événements
-kubectl get events --sort-by=.metadata.creationTimestamp
-```
-
-## Bonus : Ajout de Règles Avancées
-
-### 1. Autoriser les Mises à Jour
-```yaml
-# Ajouter à la politique backend
-egress:
-- to:
-  - ipBlock:
-      cidr: 0.0.0.0/0
+    app: web-a
   ports:
-  - protocol: TCP
-    port: 443
+    - port: 80
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-b
+  labels:
+    app: web-b
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-b-svc
+spec:
+  selector:
+    app: web-b
+  ports:
+    - port: 80
 ```
 
-### 2. Monitoring
+2. Déployer et tester :
+
+```bash
+# Déployer les applications
+kubectl apply -f app.yaml
+
+# Test depuis web-a vers web-b
+kubectl exec web-a -- curl web-b-svc
+
+# Test depuis web-b vers web-a
+kubectl exec web-b -- curl web-a-svc
+```
+
+## Exercice 2 : Bloquer le trafic
+
+1. Créer le fichier `deny-all.yaml` :
+
 ```yaml
-# Politique pour Prometheus
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: monitoring-policy
+  name: deny-all
+spec:
+  podSelector: { }
+  policyTypes:
+    - Ingress
+```
+
+2. Appliquer et tester :
+
+```bash
+# Appliquer la politique
+kubectl apply -f deny-all.yaml
+
+# Test (doit échouer)
+kubectl exec web-a -- curl web-b-svc
+```
+
+## Exercice 3 : Autoriser un Trafic Spécifique
+
+1. Créer le fichier `allow-a-to-b.yaml` :
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-a-to-b
 spec:
   podSelector:
     matchLabels:
-      app: prometheus
-  policyTypes:
-  - Egress
-  egress:
-  - to:
-    - podSelector: {}
-    ports:
-    - protocol: TCP
-      port: 9090
+      app: web-b
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: web-a
 ```
 
-## Critères de Réussite
+2. Appliquer et tester :
 
-1. **Isolation**
-   - Frontend peut uniquement accéder au Backend
-   - Backend peut uniquement accéder à la Database
-   - Aucun autre accès n'est possible
+```bash
+# Appliquer la politique
+kubectl apply -f allow-a-to-b.yaml
 
-2. **Fonctionnalité**
-   - L'application fonctionne normalement
-   - Les services peuvent communiquer
-   - Les restrictions sont appliquées
+# Test de web-a vers web-b (doit réussir)
+kubectl exec web-a -- curl web-b-svc
 
-3. **Sécurité**
-   - Politique "deny all" en place
-   - Accès minimal configuré
-   - Pas de failles de sécurité
+# Test de web-b vers web-a (doit échouer)
+kubectl exec web-b -- curl web-a-svc
+```
+
+## Nettoyage
+
+```bash
+# Supprimer toutes les ressources créées
+kubectl delete -f app.yaml
+kubectl delete networkpolicy deny-all
+kubectl delete networkpolicy allow-a-to-b
+```
+
+## Points à Retenir
+
+- Par défaut, tout trafic est autorisé
+- Une NetworkPolicy permet de contrôler le trafic
+- Les sélecteurs de pods utilisent les labels
+- Les politiques sont additives
