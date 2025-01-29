@@ -17,6 +17,7 @@ kind: ServiceAccount
 metadata:
   name: app-service-account
   namespace: default
+automountServiceAccountToken: false
 ```
 
 ```bash
