@@ -67,3 +67,35 @@ rs.initiate({
   ]
 })
 ```
+
+### 4. Commandes utiles
+
+```bash
+# Voir les StatefulSets
+kubectl get statefulset
+
+# Détails d'un StatefulSet
+kubectl describe statefulset mongodb
+
+# Voir les PVCs associés
+kubectl get pvc
+
+# DNS lookup pour un pod
+kubectl exec -it mongodb-0 -- nslookup mongodb-0.mongodb-service
+
+# Voir les logs d'un pod spécifique
+kubectl logs mongodb-0
+
+#######
+# Mise à jour par phases
+
+# Phase 1 : Test initial
+kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":4}}}}'
+
+# Phase 2 : Extension du déploiement
+kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":2}}}}'
+
+# Phase 3 : Déploiement complet
+kubectl patch statefulset web -p '{"spec":{"updateStrategy":{"rollingUpdate":{"partition":0}}}}'
+
+```
