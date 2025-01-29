@@ -3,6 +3,7 @@
 ## Exercice Pratique : Cluster MongoDB
 
 ### 1. Service Headless
+
 ```yaml
 apiVersion: v1
 kind: Service
@@ -13,11 +14,12 @@ spec:
   selector:
     app: mongodb
   ports:
-  - port: 27017
-    targetPort: 27017
+    - port: 27017
+      targetPort: 27017
 ```
 
 ### 2. StatefulSet MongoDB
+
 ```yaml
 apiVersion: apps/v1
 kind: StatefulSet
@@ -35,25 +37,26 @@ spec:
         app: mongodb
     spec:
       containers:
-      - name: mongodb
-        image: mongo:4.4
-        command: ["mongod", "--replSet", "rs0"]
-        ports:
-        - containerPort: 27017
-        volumeMounts:
-        - name: data
-          mountPath: /data/db
+        - name: mongodb
+          image: mongo:4.4
+          command: [ "mongod", "--replSet", "rs0", "--bind_ip_all" ]
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
   volumeClaimTemplates:
-  - metadata:
-      name: data
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      resources:
-        requests:
-          storage: 10Gi
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 10Gi
 ```
 
 ### 3. Initialisation du Replica Set
+
 ```javascript
 rs.initiate({
   _id: "rs0",
