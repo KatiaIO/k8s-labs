@@ -9,11 +9,15 @@ Déployer et configurer NGINX Ingress Controller pour exposer plusieurs services
 ```bash
 # Via Helm
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
 
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --create-namespace \
-  --namespace ingress-nginx
+helm upgrade -i ingress-nginx ingress-nginx/ingress-nginx \
+    --version 4.2.3 \
+    --namespace kube-system \
+    --set controller.service.type=ClusterIP
+
+kubectl -n kube-system rollout status deployment ingress-nginx-controller
+
+kubectl get deployment -n kube-system ingress-nginx-controller
 ```
 
 ## Étape 2 : Déployer les Applications de Test
